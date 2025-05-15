@@ -12,10 +12,21 @@ from env import AttrDict
 import json
 import yaml
 from text_preprocess_for_inference import TTSDurAlignPreprocessor, CharTextPreprocessor, TTSPreprocessor
+import gc
 
 SAMPLING_RATE = 22050
+CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 50))
+MAX_TEXT_LENGTH = int(os.environ.get('MAX_TEXT_LENGTH', 1000))
+
+# Global cache for models
+model_cache = {}
+vocoder_cache = {}
 
 def load_hifigan_vocoder(language, gender, device):
+    cache_key = f"{language}_{gender}"
+    if cache_key in vocoder_cache:
+        return vocoder_cache[cache_key]
+
     # Load HiFi-GAN vocoder configuration file and generator model for the specified language and gender
     vocoder_config = f"vocoder/{gender}/aryan/hifigan/config.json"
     vocoder_generator = f"vocoder/{gender}/aryan/hifigan/generator"
@@ -33,15 +44,18 @@ def load_hifigan_vocoder(language, gender, device):
     generator.eval()
     generator.remove_weight_norm()
 
-    # Return the loaded and prepared HiFi-GAN generator model
+    # Cache the model
+    vocoder_cache[cache_key] = generator
     return generator
 
-
 def load_fastspeech2_model(language, gender, device):
+    cache_key = f"{language}_{gender}"
+    if cache_key in model_cache:
+        return model_cache[cache_key]
     
-    #updating the config.yaml fiel based on language and gender
+    #updating the config.yaml file based on language and gender
     with open(f"{language}/{gender}/model/config.yaml", "r") as file:      
-     config = yaml.safe_load(file)
+        config = yaml.safe_load(file)
     
     current_working_directory = os.getcwd()
     feat="model/feats_stats.npz"
@@ -52,10 +66,9 @@ def load_fastspeech2_model(language, gender, device):
     pitch_path=os.path.join(current_working_directory,language,gender,pitch)
     energy_path=os.path.join(current_working_directory,language,gender,energy)
 
-    
-    config["normalize_conf"]["stats_file"]  = feat_path
-    config["pitch_normalize_conf"]["stats_file"]  = pitch_path
-    config["energy_normalize_conf"]["stats_file"]  = energy_path
+    config["normalize_conf"]["stats_file"] = feat_path
+    config["pitch_normalize_conf"]["stats_file"] = pitch_path
+    config["energy_normalize_conf"]["stats_file"] = energy_path
         
     with open(f"{language}/{gender}/model/config.yaml", "w") as file:
         yaml.dump(config, file)
@@ -63,37 +76,65 @@ def load_fastspeech2_model(language, gender, device):
     tts_model = f"{language}/{gender}/model/model.pth"
     tts_config = f"{language}/{gender}/model/config.yaml"
     
+    model = Text2Speech(train_config=tts_config, model_file=tts_model, device=device)
     
-    return Text2Speech(train_config=tts_config, model_file=tts_model, device=device)
+    # Cache the model
+    model_cache[cache_key] = model
+    return model
 
 def text_synthesis(language, gender, sample_text, vocoder, MAX_WAV_VALUE, device, alpha):
-    # Perform Text-to-Speech synthesis
-    with torch.no_grad():
-        # Load the FastSpeech2 model for the specified language and gender
-        
-        model = load_fastspeech2_model(language, gender, device)
+    try:
+        with torch.no_grad():
+            # Load the FastSpeech2 model for the specified language and gender
+            model = load_fastspeech2_model(language, gender, device)
+           
+            # Generate mel-spectrograms from the input text using the FastSpeech2 model
+            out = model(sample_text, decode_conf={"alpha": alpha})
+            x = out["feat_gen_denorm"].T.unsqueeze(0) * 2.3262
+            x = x.to(device)
+            
+            # Use the HiFi-GAN vocoder to convert mel-spectrograms to raw audio waveforms
+            y_g_hat = vocoder(x)
+            audio = y_g_hat.squeeze()
+            audio = audio * MAX_WAV_VALUE
+            audio = audio.cpu().numpy().astype('int16')
+            
+            # Clear some memory
+            del out, x, y_g_hat
+            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
+            
+            return audio
+    except Exception as e:
+        print(f"Error in text synthesis: {str(e)}")
+        raise
 
-       
-        # Generate mel-spectrograms from the input text using the FastSpeech2 model
-        out = model(sample_text, decode_conf={"alpha": alpha})
-        print("TTS Done")  
-        x = out["feat_gen_denorm"].T.unsqueeze(0) * 2.3262
-        x = x.to(device)
-        
-        # Use the HiFi-GAN vocoder to convert mel-spectrograms to raw audio waveforms
-        y_g_hat = vocoder(x)
-        audio = y_g_hat.squeeze()
-        audio = audio * MAX_WAV_VALUE
-        audio = audio.cpu().numpy().astype('int16')
-        
-        # Return the synthesized audio
-        return audio
+def split_into_chunks(text, max_length=MAX_TEXT_LENGTH, chunk_size=CHUNK_SIZE):
+    # First check if text exceeds maximum length
+    if len(text) > max_length:
+        raise ValueError(f"Text length ({len(text)}) exceeds maximum allowed length ({max_length})")
     
-def split_into_chunks(text, words_per_chunk=100):
     words = text.split()
-    chunks = [words[i:i + words_per_chunk] for i in range(0, len(words), words_per_chunk)]
+    chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
     return [' '.join(chunk) for chunk in chunks]
 
+def process_chunk(args):
+    sample_text, language, gender, vocoder, device, alpha = args
+    try:
+        phone_dictionary = {}
+        preprocessor = get_preprocessor(language)
+        preprocessed_text, _ = preprocessor.preprocess(sample_text, language, gender, phone_dictionary)
+        preprocessed_text = " ".join(preprocessed_text)
+        return text_synthesis(language, gender, preprocessed_text, vocoder, MAX_WAV_VALUE, device, alpha)
+    except Exception as e:
+        print(f"Error processing chunk: {str(e)}")
+        raise
+
+def get_preprocessor(language):
+    if language in ["urdu", "punjabi"]:
+        return CharTextPreprocessor()
+    elif language == "english":
+        return TTSPreprocessor()
+    return TTSDurAlignPreprocessor()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Text-to-Speech Inference")
@@ -105,51 +146,32 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    phone_dictionary = {}
-    # Set the device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        # Set the device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Load the HiFi-GAN vocoder with dynamic language and gender
-    vocoder = load_hifigan_vocoder(args.language, args.gender, device)
-    
-    if args.language == "urdu" or args.language == "punjabi":
-            preprocessor = CharTextPreprocessor()
-    elif args.language == "english":
-            preprocessor = TTSPreprocessor()
-    else:
-            preprocessor = TTSDurAlignPreprocessor()
-
-
-    import concurrent.futures
-    import numpy as np
-    import time
-
-
-    start_time = time.time()
-    audio_arr = []  # Initialize an empty list to store audio samples
-    result = split_into_chunks(args.sample_text)
-
-    # Use ThreadPoolExecutor for concurrent execution
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Process each text sample concurrently
-        for sample_text in result:
-            #print("sample_text -- ", sample_text)
+        # Load the HiFi-GAN vocoder with dynamic language and gender
+        vocoder = load_hifigan_vocoder(args.language, args.gender, device)
+        
+        chunks = split_into_chunks(args.sample_text)
+        audio_arr = []
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            chunk_args = [(chunk, args.language, args.gender, vocoder, device, args.alpha) for chunk in chunks]
+            results = list(executor.map(process_chunk, chunk_args))
+            audio_arr.extend(results)
+        
+        if audio_arr:
+            result_array = np.concatenate(audio_arr, axis=0)
+            output_file = args.output_file or f"{args.language}_{args.gender}_output.wav"
+            write(output_file, SAMPLING_RATE, result_array)
+            print(f"Successfully generated audio file: {output_file}")
+        else:
+            print("No audio generated")
             
-            # Preprocess the text and obtain a list of phrases
-            preprocessed_text, phrases = preprocessor.preprocess(sample_text, args.language, args.gender, phone_dictionary)
-            preprocessed_text = " ".join(preprocessed_text)
-
-            # Generate audio from the preprocessed text using a text-to-speech synthesis function
-            audio = text_synthesis(args.language, args.gender, preprocessed_text, vocoder, MAX_WAV_VALUE, device, args.alpha)
-
-            
-            # Set the output file name
-            if args.output_file:
-                output_file = f"{args.output_file}"
-            else:
-                output_file = f"{args.language}_{args.gender}_output.wav"
-
-            # Append the generated audio to the list
-            audio_arr.append(audio)
-    result_array = np.concatenate(audio_arr, axis=0)
-    write(output_file, SAMPLING_RATE, result_array)
+    except Exception as e:
+        print(f"Error in main: {str(e)}")
+        sys.exit(1)
+    finally:
+        # Clear caches
+        torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
