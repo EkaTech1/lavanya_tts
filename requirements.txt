@@ -11,10 +11,13 @@ soundfile==0.12.1
 requests==2.31.0
 matplotlib==3.7.1
 pandas==2.0.3
-indic-num2words==2.1.0
+indic-num2words==1.3.1
+
 nltk==3.8.1
 indic-unified-parser==1.1.0
 gunicorn==21.2.0
 # Additional dependencies
 setuptools>=65.5.1
 wheel>=0.40.0 
+
+
