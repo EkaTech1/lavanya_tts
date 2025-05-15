@@ -63,6 +63,39 @@
             border-radius: 10px;
             background-color: #e9ecef;
         }
+        .char-counter {
+            float: right;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        .progress {
+            height: 5px;
+            border-radius: 2px;
+            background-color: #e9ecef;
+        }
+        .progress-bar {
+            background-color: #4361ee;
+            transition: width 0.5s ease;
+        }
+        #textLengthWarning {
+            font-size: 0.9em;
+            margin-top: 0.5rem;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .status-info {
+            color: #0d6efd;
+            background-color: #cfe2ff;
+            border: 1px solid #b6d4fe;
+        }
+        .status-error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c2c7;
+        }
     </style>
 </head>
 <body>
@@ -123,17 +156,22 @@
                     <div class="mb-4">
                         <label for="text" class="form-label">
                             <i class="fas fa-keyboard"></i> Enter Text
+                            <span class="char-counter">
+                                <span id="charCount">0</span>/2000 characters
+                            </span>
                         </label>
                         <textarea class="form-control" id="text" name="text" rows="5" 
                                 placeholder="Type or paste your text here..." required></textarea>
+                        <div id="textLengthWarning" class="alert alert-warning mt-2" style="display: none;"></div>
+                        <div class="progress mt-2" style="display: none;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%"></div>
+                        </div>
                         
                         <div class="samples-section mt-2">
-                            <label class="form-label">
-                                <i class="fas fa-lightbulb"></i> Sample Texts
-                            </label>
-                            <div class="sample-texts">
-                                <!-- Sample text buttons will be dynamically added here -->
-                            </div>
+                            <button type="button" class="btn btn-secondary" id="sampleTextBtn">
+                                <i class="fas fa-lightbulb"></i> Load Sample Text
+                            </button>
                         </div>
                     </div>
 
@@ -151,15 +189,17 @@
                     <p class="mt-2">Generating speech...</p>
                 </div>
 
+                <div id="status"></div>
+
                 <div id="audioContainer" class="mt-4" style="display: none;">
                     <h5><i class="fas fa-headphones"></i> Generated Audio</h5>
                     <audio id="audioPlayer" class="audio-player" controls>
                         Your browser does not support the audio element.
                     </audio>
                     <div class="d-grid gap-2 mt-3">
-                        <button id="downloadBtn" class="btn btn-outline-primary">
+                        <a id="downloadBtn" class="btn btn-outline-primary" download>
                             <i class="fas fa-download"></i> Download Audio
-                        </button>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -184,8 +224,8 @@
                 return;
             }
 
-            if (text.length > 500) {
-                alert("Text is too long. Please limit to 500 characters.");
+            if (text.length > 2000) {
+                alert("Text length exceeds the maximum limit of 2000 characters. For better quality, please split your text into smaller segments.");
                 return;
             }
 
@@ -193,13 +233,13 @@
             const gender = document.getElementById('gender').value;
             const alpha = document.getElementById('alpha').value;
 
-            const loadingDiv = document.getElementById('loading');
+            const loadingDiv = document.querySelector('.loading');
             const statusDiv = document.getElementById('status');
-            const audioDiv = document.getElementById('audio-section');
+            const audioContainer = document.getElementById('audioContainer');
             
             loadingDiv.style.display = 'block';
             statusDiv.textContent = 'Generating speech...';
-            audioDiv.style.display = 'none';
+            audioContainer.style.display = 'none';
             isGenerating = true;
 
             let retryCount = 0;
@@ -234,13 +274,14 @@
                         const data = await response.json();
                         
                         if (data.status === 'success') {
-                            const audio = document.getElementById('audio');
-                            const download = document.getElementById('download');
+                            const audioPlayer = document.getElementById('audioPlayer');
+                            const downloadBtn = document.getElementById('downloadBtn');
                             
-                            audio.src = data.audio_path;
-                            download.href = data.audio_path;
+                            audioPlayer.src = data.audio_path;
+                            downloadBtn.href = data.audio_path;
                             
-                            audioDiv.style.display = 'block';
+                            audioContainer.style.display = 'block';
+                            statusDiv.textContent = '';
                             break; // Success, exit retry loop
                         } else {
                             throw new Error(data.message || 'Failed to generate speech');
@@ -259,7 +300,12 @@
                 }
             } catch (error) {
                 console.error('Error:', error);
-                statusDiv.textContent = `Error: ${error.message}. Please try with shorter text or try again later.`;
+                let errorMessage = error.message;
+                if (errorMessage.includes('TTS generation failed:')) {
+                    errorMessage = 'Speech generation failed. Please try again.';
+                }
+                statusDiv.textContent = errorMessage;
+                audioContainer.style.display = 'none';
             } finally {
                 loadingDiv.style.display = 'none';
                 isGenerating = false;
@@ -267,7 +313,7 @@
         }
 
         // Add event listener for the form
-        document.getElementById('tts-form').addEventListener('submit', function(e) {
+        document.getElementById('ttsForm').addEventListener('submit', function(e) {
             e.preventDefault();
             generateSpeech();
         });
@@ -287,7 +333,7 @@
                 'odia': 'ନମସ୍କାର, ଏହା ଓଡ଼ିଆ ଭାଷାର ଏକ ଉଦାହରଣ ବାକ୍ୟ।',
                 'assamese': 'নমস্কাৰ, এইটো অসমীয়া ভাষাৰ এটা উদাহৰণ বাক্য।',
                 'manipuri': 'কুমজিনবা, অসি মণিপুরি লোনগি খুদম ওইবা ৱাহৈমচানি।',
-                'bodo': 'नमस्कार, इयाव बर' रावनि सोदोब फराय नङा।',
+                'bodo': 'नमस्कार, इयाव बर रावनि सोदोब फराय नङा।',
                 'rajasthani': 'खम्मा घणी, आ राजस्थानी भाषा रो एक उदाहरण वाक्य है।',
                 'urdu': 'السلام علیکم، یہ اردو زبان کی ایک مثال ہے۔',
                 'english': 'Hello, this is an example sentence in English.'
@@ -296,20 +342,33 @@
             document.getElementById('text').value = sampleTexts[language] || '';
         }
 
-        // Update sample text when language changes
-        document.getElementById('language').addEventListener('change', function() {
-            insertSampleText(this.value);
+        // Add click handler for sample text button
+        document.getElementById('sampleTextBtn').addEventListener('click', function() {
+            const language = document.getElementById('language').value;
+            insertSampleText(language);
         });
-
-        // Initialize with sample text for default language
-        window.onload = function() {
-            const defaultLanguage = document.getElementById('language').value;
-            insertSampleText(defaultLanguage);
-        };
 
         // Update alpha value display
         document.getElementById('alpha').addEventListener('input', function(e) {
             document.getElementById('alphaValue').textContent = e.target.value + 'x';
+        });
+
+        // Add character counter
+        document.getElementById('text').addEventListener('input', function(e) {
+            const text = e.target.value;
+            const charCount = text.length;
+            document.getElementById('charCount').textContent = charCount;
+            
+            const warning = document.getElementById('textLengthWarning');
+            if (charCount > 2000) {
+                warning.style.display = 'block';
+                warning.textContent = 'Text exceeds 2000 characters. Long text will be processed in chunks, which may take longer.';
+            } else if (charCount > 1600) {
+                warning.style.display = 'block';
+                warning.textContent = `Approaching character limit (${charCount}/2000)`;
+            } else {
+                warning.style.display = 'none';
+            }
         });
     </script>
 </body>

@@ -28,9 +28,9 @@ services:
       - key: PYTHONPATH
         value: /opt/render/project/src:/opt/render/project/src/Fastspeech2_HS
       - key: CHUNK_SIZE
-        value: "30"
+        value: "100"
       - key: MAX_TEXT_LENGTH
-        value: "500"
+        value: "2000"
       - key: GUNICORN_CMD_ARGS
         value: "--preload"
       - key: GIT_LFS_SKIP_SMUDGE

@@ -13,14 +13,100 @@ import json
 import yaml
 from text_preprocess_for_inference import TTSDurAlignPreprocessor, CharTextPreprocessor, TTSPreprocessor
 import gc
+import concurrent.futures
+import numpy as np
+import re
 
 SAMPLING_RATE = 22050
-CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 50))
-MAX_TEXT_LENGTH = int(os.environ.get('MAX_TEXT_LENGTH', 1000))
+CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 100))  # Process 100 words at a time
+MAX_TEXT_LENGTH = int(os.environ.get('MAX_TEXT_LENGTH', 2000))  # Maximum 2000 characters
 
 # Global cache for models
 model_cache = {}
 vocoder_cache = {}
+
+# Sentence boundary markers for different languages
+SENTENCE_MARKERS = {
+    'english': ['.', '!', '?', ';'],
+    'hindi': ['।', '॥'],
+    'punjabi': ['।', '॥'],
+    'tamil': ['.|'],
+    'telugu': ['.|'],
+    'kannada': ['.|'],
+    'malayalam': ['.|'],
+    'gujarati': ['.|'],
+    'bengali': ['।'],
+    'odia': ['।'],
+    'assamese': ['।'],
+    'manipuri': ['।'],
+    'bodo': ['।'],
+    'rajasthani': ['।'],
+    'urdu': ['۔'],
+    'default': ['.', '।', '॥', '|', '۔', '!', '?']
+}
+
+def get_sentence_markers(language):
+    """Get sentence boundary markers for a specific language."""
+    return SENTENCE_MARKERS.get(language.lower(), SENTENCE_MARKERS['default'])
+
+def split_into_chunks(text, language='default', max_length=MAX_TEXT_LENGTH, chunk_size=CHUNK_SIZE):
+    """
+    Split text into chunks while preserving sentence boundaries and context.
+    """
+    # First check if text exceeds maximum length
+    if len(text) > max_length:
+        raise ValueError(f"Text length ({len(text)}) exceeds maximum allowed length ({max_length})")
+    
+    # Get sentence markers for the language
+    markers = get_sentence_markers(language)
+    
+    # Create regex pattern for sentence boundaries
+    pattern = '|'.join(map(re.escape, markers))
+    
+    # Split text into sentences
+    sentences = re.split(f'({pattern})', text)
+    
+    # Recombine sentences with their punctuation
+    sentences = [''.join(i) for i in zip(sentences[::2], sentences[1::2] + [''] * (len(sentences[::2]) - len(sentences[1::2])))]
+    sentences = [s.strip() for s in sentences if s.strip()]
+    
+    chunks = []
+    current_chunk = []
+    current_word_count = 0
+    
+    for sentence in sentences:
+        sentence_words = sentence.split()
+        sentence_word_count = len(sentence_words)
+        
+        # If a single sentence is longer than chunk_size, split it
+        if sentence_word_count > chunk_size:
+            # If there are words in current_chunk, add them as a chunk
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = []
+                current_word_count = 0
+            
+            # Split long sentence into chunks
+            for i in range(0, sentence_word_count, chunk_size):
+                chunk = sentence_words[i:i + chunk_size]
+                chunks.append(' '.join(chunk))
+        
+        # If adding this sentence would exceed chunk_size
+        elif current_word_count + sentence_word_count > chunk_size:
+            # Add current chunk and start new one
+            chunks.append(' '.join(current_chunk))
+            current_chunk = sentence_words
+            current_word_count = sentence_word_count
+        else:
+            # Add sentence to current chunk
+            current_chunk.extend(sentence_words)
+            current_word_count += sentence_word_count
+    
+    # Add any remaining words
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    return chunks
 
 def load_hifigan_vocoder(language, gender, device):
     cache_key = f"{language}_{gender}"
@@ -108,15 +194,6 @@ def text_synthesis(language, gender, sample_text, vocoder, MAX_WAV_VALUE, device
         print(f"Error in text synthesis: {str(e)}")
         raise
 
-def split_into_chunks(text, max_length=MAX_TEXT_LENGTH, chunk_size=CHUNK_SIZE):
-    # First check if text exceeds maximum length
-    if len(text) > max_length:
-        raise ValueError(f"Text length ({len(text)}) exceeds maximum allowed length ({max_length})")
-    
-    words = text.split()
-    chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
-    return [' '.join(chunk) for chunk in chunks]
-
 def process_chunk(args):
     sample_text, language, gender, vocoder, device, alpha = args
     try:
@@ -153,7 +230,7 @@ if __name__ == "__main__":
         # Load the HiFi-GAN vocoder with dynamic language and gender
         vocoder = load_hifigan_vocoder(args.language, args.gender, device)
         
-        chunks = split_into_chunks(args.sample_text)
+        chunks = split_into_chunks(args.sample_text, args.language)
         audio_arr = []
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:

@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 import os
 import subprocess
 import logging
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -91,11 +92,11 @@ def synthesize():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         inference_dir = os.path.join(current_dir, 'Fastspeech2_HS')
         
-        logger.info(f"Starting TTS generation for language: {language}, gender: {gender}")
+        logger.info(f"Starting TTS generation for language: {language}, gender: {gender}, text: {text}")
         
         # Run inference.py with the provided parameters
         cmd = [
-            'python',
+            sys.executable,  # Use the same Python interpreter
             'inference.py',
             '--sample_text', text,
             '--language', language,
@@ -114,11 +115,27 @@ def synthesize():
             timeout=300  # 5 minutes timeout
         )
         
-        if process.returncode != 0:
-            logger.error(f"TTS generation failed: {process.stderr}")
+        # Log the process output
+        if process.stdout:
+            logger.info(f"Process output: {process.stdout}")
+        if process.stderr:
+            logger.warning(f"Process warnings: {process.stderr}")
+        
+        # Check if the output file was actually created
+        if not os.path.exists(output_file):
+            logger.error("Output file was not created")
             return jsonify({
                 'status': 'error',
-                'message': f'TTS generation failed: {process.stderr}'
+                'message': 'Failed to generate audio file. Please try again.'
+            }), 500
+            
+        # Check if the file size is valid (not empty)
+        if os.path.getsize(output_file) == 0:
+            logger.error("Generated audio file is empty")
+            os.remove(output_file)  # Clean up empty file
+            return jsonify({
+                'status': 'error',
+                'message': 'Generated audio file is empty. Please try again.'
             }), 500
         
         logger.info(f"Successfully generated audio file: {filename}")
@@ -133,19 +150,20 @@ def synthesize():
         logger.error("TTS generation timed out")
         return jsonify({
             'status': 'error',
-            'message': 'TTS generation timed out. Please try with shorter text.'
+            'message': 'Speech generation is taking too long. Please try with shorter text.'
         }), 500
     except subprocess.CalledProcessError as e:
-        logger.error(f"TTS generation process error: {e.stderr}")
+        error_msg = e.stderr.strip() if e.stderr else str(e)
+        logger.error(f"TTS generation process error: {error_msg}")
         return jsonify({
             'status': 'error',
-            'message': f'TTS generation failed: {e.stderr}'
+            'message': 'Speech generation failed. Please try again.'
         }), 500
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': 'An unexpected error occurred. Please try again later.'
+            'message': 'An unexpected error occurred. Please try again.'
         }), 500
 
 @app.errorhandler(500)
