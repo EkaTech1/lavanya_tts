@@ -2,10 +2,11 @@ services:
   - type: web
     name: lavanya-tts
     env: python
+    plan: starter # Using paid tier for better performance
     buildCommand: |
       python -m pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 600 --keep-alive 120 --max-requests 5 --max-requests-jitter 2
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 300 --keep-alive 120 --max-requests 3 --max-requests-jitter 2 --worker-class gthread
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -14,15 +15,17 @@ services:
       - key: FLASK_ENV
         value: production
       - key: WORKERS
-        value: "1"
+        value: "2"
       - key: TIMEOUT
-        value: "600"
+        value: "300"
       - key: PYTHONPATH
         value: /opt/render/project/src:/opt/render/project/src/Fastspeech2_HS
       - key: CHUNK_SIZE
-        value: "50"
+        value: "30"
       - key: MAX_TEXT_LENGTH
-        value: "1000"
+        value: "500"
+      - key: GUNICORN_CMD_ARGS
+        value: "--preload"
     disk:
       name: audio
       mountPath: /opt/render/project/src/static/audio
