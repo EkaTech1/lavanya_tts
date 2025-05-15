@@ -1,11 +1,9 @@
-setuptools>=65.5.1
-wheel>=0.40.0
-numpy==1.23.5
-scipy==1.10.1
-PyYAML==6.0.1
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.0.0+cpu
 torchaudio==2.0.1+cpu
+numpy==1.23.5
+scipy==1.10.1
+PyYAML==6.0.1
 flask==2.0.1
 werkzeug==2.0.3
 soundfile==0.12.1
@@ -17,6 +15,6 @@ nltk==3.8.1
 indic-unified-parser==1.0.6
 gunicorn==21.2.0
 espnet==202503
-
-git+https://github.com/espnet/espnet@v.202503#egg=espnet
+setuptools>=65.5.1
+wheel>=0.40.0
 
