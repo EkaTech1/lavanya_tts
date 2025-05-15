@@ -3,9 +3,14 @@ services:
     name: lavanya-tts
     env: python
     buildCommand: |
-      pip install --upgrade pip
+      # Install system dependencies
+      apt-get update
+      apt-get install -y libsndfile1 libportaudio2 ffmpeg
+      # Upgrade pip and install build tools
+      pip install --upgrade pip setuptools wheel
+      # Install Python dependencies
       pip install -r requirements.txt
-      pip install espnet espnet_model_zoo
+      # Download NLTK data
       python -c "import nltk; nltk.download('punkt')"
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
     envVars:
@@ -27,6 +32,8 @@ services:
         value: "32768.0"
       - key: PYTHONPATH
         value: /opt/render/project/src:/opt/render/project/src/Fastspeech2_HS
+      - key: PATH
+        value: /opt/render/project/src/.local/bin:${PATH}
     disk:
       name: audio
       mountPath: /opt/render/project/src/static/audio
