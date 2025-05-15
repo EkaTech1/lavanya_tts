@@ -1,13 +1,15 @@
-*.pth filter=lfs diff=lfs merge=lfs -text
-**/*.bin filter=lfs diff=lfs merge=lfs -text
-**/*.ckpt filter=lfs diff=lfs merge=lfs -text
-**/*.pth filter=lfs diff=lfs merge=lfs -text
-**/*.pt filter=lfs diff=lfs merge=lfs -text
-*.md filter=lfs diff=lfs merge=lfs -text
-*.txt filter=lfs diff=lfs merge=lfs -text
-*.json filter=lfs diff=lfs merge=lfs -text
-*.yaml filter=lfs diff=lfs merge=lfs -text
-*.py filter=lfs diff=lfs merge=lfs -text
-*.html filter=lfs diff=lfs merge=lfs -text
-*.css filter=lfs diff=lfs merge=lfs -text
-*.js filter=lfs diff=lfs merge=lfs -text
+# Track only model files with LFS
+Fastspeech2_HS/**/*.pth filter=lfs diff=lfs merge=lfs -text
+Fastspeech2_HS/**/*.pt filter=lfs diff=lfs merge=lfs -text
+Fastspeech2_HS/**/*.bin filter=lfs diff=lfs merge=lfs -text
+Fastspeech2_HS/**/*.ckpt filter=lfs diff=lfs merge=lfs -text
+
+# Don't track regular files with LFS
+*.md -text
+*.txt -text
+*.json -text
+*.yaml -text
+*.py -text
+*.html -text
+*.css -text
+*.js -text
