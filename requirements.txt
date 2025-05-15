@@ -4,8 +4,8 @@ torchaudio==2.0.1
 numpy==1.24.3
 scipy==1.10.1
 PyYAML==6.0.1
-espnet==202401
-espnet2==202401
+git+https://github.com/espnet/espnet@202401#egg=espnet
+
 soundfile==0.12.1
 requests==2.31.0
 matplotlib==3.7.1
