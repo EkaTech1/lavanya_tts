@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: lavanya-tts
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+    disk:
+      name: audio
+      mountPath: /opt/render/project/src/static/audio
+      sizeGB: 1 

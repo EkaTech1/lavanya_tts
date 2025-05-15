@@ -183,4 +183,61 @@ For issues and questions:
 1. Check the troubleshooting section
 2. Verify your Python and package versions
 3. Ensure all model files are in place
-4. Check system requirements are met 
+4. Check system requirements are met
+
+# Lavanya TTS - Multilingual Text-to-Speech System
+
+## Deployment on Render
+
+### Prerequisites
+- A Render account
+- Git repository with your code
+
+### Steps to Deploy
+
+1. Fork or clone this repository
+2. Connect your GitHub account to Render
+3. Create a new Web Service on Render
+4. Use the following settings:
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300`
+   - Python Version: 3.10.0
+   - Environment: Python
+   - Region: Choose the closest to your users
+
+### Environment Variables
+No additional environment variables are required for basic setup.
+
+### Important Notes
+1. The application uses disk storage for audio files
+2. Audio files are automatically cleaned up (keeping only the last 50 files)
+3. Maximum request timeout is set to 300 seconds
+4. The application uses 1 worker with 4 threads for optimal performance
+
+### Troubleshooting
+1. If you see "Error generating speech":
+   - Check the logs in Render dashboard
+   - Ensure all model files are properly uploaded
+   - Verify phone dictionaries are present
+
+2. If the application is slow:
+   - Consider upgrading to a higher tier on Render
+   - Reduce the number of concurrent users
+   - Use shorter text inputs
+
+3. If you get disk space errors:
+   - The cleanup routine should handle this automatically
+   - Consider increasing disk size in render.yaml
+   - Monitor disk usage in Render dashboard
+
+### Monitoring
+- Use Render's built-in logging to monitor the application
+- Check application logs for detailed error messages
+- Monitor disk usage regularly
+
+### Support
+For issues and questions:
+1. Check the troubleshooting section
+2. Review Render logs
+3. Verify model files are present
+4. Contact support with log details 

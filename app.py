@@ -1,9 +1,15 @@
 from flask import Flask, render_template, request, send_file, jsonify
 import os
 import subprocess
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_url_path='/static')
 app.config['UPLOAD_FOLDER'] = 'static/audio'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -11,12 +17,34 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def check_model_exists(language, gender):
     """Check if the model file exists for the given language and gender."""
     model_path = os.path.join('Fastspeech2_HS', language, gender, 'model', 'model.pth')
-    return os.path.exists(model_path)
+    exists = os.path.exists(model_path)
+    if not exists:
+        logger.error(f"Model not found at path: {model_path}")
+    return exists
 
 def check_phone_dict_exists(language):
     """Check if the phone dictionary exists for the given language."""
     dict_path = os.path.join('Fastspeech2_HS', 'phone_dict', language)
-    return os.path.exists(dict_path) and os.path.getsize(dict_path) > 0
+    exists = os.path.exists(dict_path) and os.path.getsize(dict_path) > 0
+    if not exists:
+        logger.error(f"Phone dictionary not found at path: {dict_path}")
+    return exists
+
+def cleanup_old_files(max_files=50):
+    """Clean up old audio files to prevent disk space issues."""
+    try:
+        files = os.listdir(app.config['UPLOAD_FOLDER'])
+        wav_files = [f for f in files if f.endswith('.wav')]
+        if len(wav_files) > max_files:
+            wav_files.sort(key=lambda x: os.path.getmtime(
+                os.path.join(app.config['UPLOAD_FOLDER'], x)))
+            for f in wav_files[:-max_files]:
+                try:
+                    os.remove(os.path.join(app.config['UPLOAD_FOLDER'], f))
+                except Exception as e:
+                    logger.error(f"Error removing file {f}: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error in cleanup: {str(e)}")
 
 @app.route('/')
 def home():
@@ -31,6 +59,13 @@ def synthesize():
         gender = request.form['gender']
         alpha = float(request.form.get('alpha', 1.0))
         
+        # Input validation
+        if not text or len(text.strip()) == 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Text input is required.'
+            }), 400
+        
         # Check if model and dictionary exist
         if not check_model_exists(language, gender):
             return jsonify({
@@ -44,13 +79,19 @@ def synthesize():
                 'message': f'Phone dictionary for {language} is not available.'
             }), 500
         
-        # Generate output filename
-        filename = f'output_{language}_{gender}.wav'
+        # Clean up old files before generating new ones
+        cleanup_old_files()
+        
+        # Generate output filename with timestamp to avoid conflicts
+        timestamp = str(int(os.path.getmtime(__file__)))
+        filename = f'output_{language}_{gender}_{timestamp}.wav'
         output_file = os.path.join(os.path.abspath(app.config['UPLOAD_FOLDER']), filename)
         
         # Get the absolute path to inference.py
         current_dir = os.path.dirname(os.path.abspath(__file__))
         inference_dir = os.path.join(current_dir, 'Fastspeech2_HS')
+        
+        logger.info(f"Starting TTS generation for language: {language}, gender: {gender}")
         
         # Run inference.py with the provided parameters
         cmd = [
@@ -69,14 +110,18 @@ def synthesize():
             check=True,
             cwd=inference_dir,
             capture_output=True,
-            text=True
+            text=True,
+            timeout=300  # 5 minutes timeout
         )
         
         if process.returncode != 0:
+            logger.error(f"TTS generation failed: {process.stderr}")
             return jsonify({
                 'status': 'error',
                 'message': f'TTS generation failed: {process.stderr}'
             }), 500
+        
+        logger.info(f"Successfully generated audio file: {filename}")
         
         # Return success response
         return jsonify({
@@ -84,18 +129,41 @@ def synthesize():
             'audio_path': f'/static/audio/{filename}'
         })
         
+    except subprocess.TimeoutExpired:
+        logger.error("TTS generation timed out")
+        return jsonify({
+            'status': 'error',
+            'message': 'TTS generation timed out. Please try with shorter text.'
+        }), 500
     except subprocess.CalledProcessError as e:
-        # Return error response with command output
+        logger.error(f"TTS generation process error: {e.stderr}")
         return jsonify({
             'status': 'error',
             'message': f'TTS generation failed: {e.stderr}'
         }), 500
     except Exception as e:
-        # Return error response
+        logger.error(f"Unexpected error: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': str(e)
+            'message': 'An unexpected error occurred. Please try again later.'
         }), 500
 
+@app.errorhandler(500)
+def handle_500_error(e):
+    logger.error(f"Internal server error: {str(e)}")
+    return jsonify({
+        'status': 'error',
+        'message': 'Internal server error. Please try again later.'
+    }), 500
+
+@app.errorhandler(404)
+def handle_404_error(e):
+    return jsonify({
+        'status': 'error',
+        'message': 'Resource not found.'
+    }), 404
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=4005, debug=True) 
+    port = int(os.environ.get('PORT', 4005))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug) 
