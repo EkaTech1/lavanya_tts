@@ -17,4 +17,5 @@ gunicorn==21.2.0
 espnet==202412
 setuptools>=65.5.1
 wheel>=0.40.0
+flask-cors
 

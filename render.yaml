@@ -2,14 +2,19 @@ services:
   - type: web
     name: lavanya-tts
     env: python
-    plan: starter
+    plan: standard
     buildCommand: |
       # Install and configure Git LFS
       curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
       apt-get install git-lfs
       git lfs install
-      # Pull LFS files
-      git lfs pull
+      
+      # Set Git LFS to skip downloading files that fail
+      git config lfs.fetchexclude "Fastspeech2_HS/hifigan/denorm/test_243.npy.pt"
+      
+      # Pull LFS files with continue on error
+      git lfs pull || echo "Some LFS files may have failed to download, continuing build..."
+      
       # Install Python dependencies
       python -m pip install --upgrade pip
       pip install -r requirements.txt
@@ -34,8 +39,18 @@ services:
       - key: GUNICORN_CMD_ARGS
         value: "--preload"
       - key: GIT_LFS_SKIP_SMUDGE
-        value: "0"
+        value: "1"
+      - key: MODEL_BASE_URL
+        value: "https://your-storage-url.com/models"
+      - key: LOCAL_MODEL_DIR
+        value: "/opt/render/project/src/models_cache"
     disk:
       name: audio
       mountPath: /opt/render/project/src/static/audio
-      sizeGB: 1 
+      sizeGB: 2
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+      targetMemoryPercent: 80
+    healthCheckPath: /
+    healthCheckTimeout: 300 

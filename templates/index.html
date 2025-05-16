@@ -212,9 +212,41 @@
         const MAX_RETRIES = 2;
         const TIMEOUT_MS = 300000; // 5 minutes
 
+        // Add validation for language-gender combinations
+        const supportedModels = {
+            'hindi': ['male'],
+            'marathi': ['male'],
+            'sarjerao_ekalipi': ['male', 'female']
+        };
+
+        document.getElementById('language').addEventListener('change', function() {
+            const language = this.value;
+            const genderSelect = document.getElementById('gender');
+            const selectedGender = genderSelect.value;
+            
+            // Enable/disable gender options based on language
+            Array.from(genderSelect.options).forEach(option => {
+                const gender = option.value;
+                const isSupported = supportedModels[language]?.includes(gender);
+                option.disabled = !isSupported;
+                if (!isSupported && gender === selectedGender) {
+                    genderSelect.value = supportedModels[language][0];
+                }
+            });
+        });
+
         async function generateSpeech() {
             if (isGenerating) {
                 alert("Please wait for the current generation to complete.");
+                return;
+            }
+
+            const language = document.getElementById('language').value;
+            const gender = document.getElementById('gender').value;
+            
+            // Validate language-gender combination
+            if (!supportedModels[language]?.includes(gender)) {
+                alert(`${gender} voice is not available for ${language}. Please select a supported combination.`);
                 return;
             }
 
@@ -229,8 +261,6 @@
                 return;
             }
 
-            const language = document.getElementById('language').value;
-            const gender = document.getElementById('gender').value;
             const alpha = document.getElementById('alpha').value;
 
             const loadingDiv = document.querySelector('.loading');

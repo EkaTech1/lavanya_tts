@@ -18,10 +18,34 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 def check_model_exists(language, gender):
     """Check if the model file exists for the given language and gender."""
     model_path = os.path.join('Fastspeech2_HS', language, gender, 'model', 'model.pth')
-    exists = os.path.exists(model_path)
-    if not exists:
+    
+    # Determine if language is Aryan or Dravidian
+    aryan_languages = ['hindi', 'marathi', 'punjabi', 'gujarati', 'bengali', 'odia', 'assamese', 'manipuri', 'bodo', 'rajasthani', 'urdu']
+    language_family = 'aryan' if language.lower() in aryan_languages else 'dravidian'
+    
+    vocoder_path = os.path.join('Fastspeech2_HS', 'vocoder', gender, language_family, 'hifigan', 'generator')
+    
+    model_exists = os.path.exists(model_path)
+    vocoder_exists = os.path.exists(vocoder_path)
+    
+    if not model_exists:
         logger.error(f"Model not found at path: {model_path}")
-    return exists
+    if not vocoder_exists:
+        logger.error(f"Vocoder not found at path: {vocoder_path}")
+        
+    # Currently only these combinations are supported
+    supported_models = {
+        'hindi': ['male'],
+        'marathi': ['male'],
+        'sarjerao_ekalipi': ['male', 'female']
+    }
+    
+    is_supported = language in supported_models and gender in supported_models[language]
+    
+    if not is_supported:
+        logger.error(f"Language-gender combination {language}-{gender} is not yet supported. Available models: {supported_models}")
+        
+    return model_exists and vocoder_exists and is_supported
 
 def check_phone_dict_exists(language):
     """Check if the phone dictionary exists for the given language."""
@@ -54,45 +78,62 @@ def home():
 @app.route('/synthesize', methods=['POST'])
 def synthesize():
     try:
+        logger.info("Starting speech synthesis request")
+        
         # Get form data
         text = request.form['text']
         language = request.form['language']
         gender = request.form['gender']
         alpha = float(request.form.get('alpha', 1.0))
         
+        logger.info(f"Received request - Language: {language}, Gender: {gender}, Text length: {len(text)}")
+        
         # Input validation
         if not text or len(text.strip()) == 0:
+            logger.error("Empty text input received")
             return jsonify({
                 'status': 'error',
                 'message': 'Text input is required.'
             }), 400
         
         # Check if model and dictionary exist
+        logger.info("Checking model existence...")
         if not check_model_exists(language, gender):
+            supported_models = {
+                'hindi': ['male'],
+                'marathi': ['male'],
+                'sarjerao_ekalipi': ['male', 'female']
+            }
+            logger.error(f"Model not available for {language} ({gender})")
             return jsonify({
                 'status': 'error',
-                'message': f'TTS model for {language} ({gender}) is not available.'
-            }), 500
+                'message': f'TTS model for {language} ({gender}) is not available. Currently supported models: {supported_models}'
+            }), 400
             
+        logger.info("Checking phone dictionary...")
         if not check_phone_dict_exists(language):
+            logger.error(f"Phone dictionary not available for {language}")
             return jsonify({
                 'status': 'error',
                 'message': f'Phone dictionary for {language} is not available.'
-            }), 500
+            }), 400
         
         # Clean up old files before generating new ones
+        logger.info("Cleaning up old files...")
         cleanup_old_files()
         
-        # Generate output filename with timestamp to avoid conflicts
+        # Generate output filename with timestamp
         timestamp = str(int(os.path.getmtime(__file__)))
         filename = f'output_{language}_{gender}_{timestamp}.wav'
         output_file = os.path.join(os.path.abspath(app.config['UPLOAD_FOLDER']), filename)
+        
+        logger.info(f"Will generate output to: {output_file}")
         
         # Get the absolute path to inference.py
         current_dir = os.path.dirname(os.path.abspath(__file__))
         inference_dir = os.path.join(current_dir, 'Fastspeech2_HS')
         
-        logger.info(f"Starting TTS generation for language: {language}, gender: {gender}, text: {text}")
+        logger.info(f"Running inference from directory: {inference_dir}")
         
         # Run inference.py with the provided parameters
         cmd = [
@@ -105,65 +146,69 @@ def synthesize():
             '--output_file', output_file
         ]
         
+        logger.info(f"Executing command: {' '.join(cmd)}")
+        
         # Run the command from the Fastspeech2_HS directory
-        process = subprocess.run(
-            cmd,
-            check=True,
-            cwd=inference_dir,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minutes timeout
-        )
-        
-        # Log the process output
-        if process.stdout:
-            logger.info(f"Process output: {process.stdout}")
-        if process.stderr:
-            logger.warning(f"Process warnings: {process.stderr}")
-        
-        # Check if the output file was actually created
-        if not os.path.exists(output_file):
-            logger.error("Output file was not created")
+        try:
+            process = subprocess.run(
+                cmd,
+                check=True,
+                cwd=inference_dir,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            # Log the process output
+            if process.stdout:
+                logger.info(f"Process output: {process.stdout}")
+            if process.stderr:
+                logger.warning(f"Process warnings: {process.stderr}")
+            
+            # Check if the output file was actually created
+            if not os.path.exists(output_file):
+                logger.error("Output file was not created")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to generate audio file. Please try again.'
+                }), 500
+                
+            # Check if the file size is valid (not empty)
+            if os.path.getsize(output_file) == 0:
+                logger.error("Generated audio file is empty")
+                os.remove(output_file)  # Clean up empty file
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Generated audio file is empty. Please try again.'
+                }), 500
+            
+            logger.info(f"Successfully generated audio file: {filename}")
+            
+            # Return success response
+            return jsonify({
+                'status': 'success',
+                'audio_path': f'/static/audio/{filename}'
+            })
+            
+        except subprocess.TimeoutExpired:
+            logger.error("TTS generation timed out")
             return jsonify({
                 'status': 'error',
-                'message': 'Failed to generate audio file. Please try again.'
+                'message': 'Speech generation is taking too long. Please try with shorter text.'
+            }), 500
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+            logger.error(f"TTS generation process error: {error_msg}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Speech generation failed: {error_msg}'
             }), 500
             
-        # Check if the file size is valid (not empty)
-        if os.path.getsize(output_file) == 0:
-            logger.error("Generated audio file is empty")
-            os.remove(output_file)  # Clean up empty file
-            return jsonify({
-                'status': 'error',
-                'message': 'Generated audio file is empty. Please try again.'
-            }), 500
-        
-        logger.info(f"Successfully generated audio file: {filename}")
-        
-        # Return success response
-        return jsonify({
-            'status': 'success',
-            'audio_path': f'/static/audio/{filename}'
-        })
-        
-    except subprocess.TimeoutExpired:
-        logger.error("TTS generation timed out")
-        return jsonify({
-            'status': 'error',
-            'message': 'Speech generation is taking too long. Please try with shorter text.'
-        }), 500
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr.strip() if e.stderr else str(e)
-        logger.error(f"TTS generation process error: {error_msg}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Speech generation failed. Please try again.'
-        }), 500
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Unexpected error in synthesize: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
-            'message': 'An unexpected error occurred. Please try again.'
+            'message': f'An unexpected error occurred: {str(e)}'
         }), 500
 
 @app.errorhandler(500)

@@ -1,5 +1,7 @@
 import sys
 import os
+import requests
+from pathlib import Path
 #replace the path with your hifigan path to import Generator from models.py 
 sys.path.append("hifigan")
 import argparse
@@ -24,6 +26,10 @@ MAX_TEXT_LENGTH = int(os.environ.get('MAX_TEXT_LENGTH', 2000))  # Maximum 2000 c
 # Global cache for models
 model_cache = {}
 vocoder_cache = {}
+
+# Model storage configuration
+MODEL_BASE_URL = os.environ.get('MODEL_BASE_URL', 'https://your-storage-url.com/models')
+LOCAL_MODEL_DIR = os.environ.get('LOCAL_MODEL_DIR', 'models_cache')
 
 # Sentence boundary markers for different languages
 SENTENCE_MARKERS = {
@@ -108,65 +114,100 @@ def split_into_chunks(text, language='default', max_length=MAX_TEXT_LENGTH, chun
     
     return chunks
 
+def download_if_needed(remote_path, local_path):
+    """Download a file if it doesn't exist locally."""
+    if not os.path.exists(local_path):
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        url = f"{MODEL_BASE_URL}/{remote_path}"
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+def get_model_path(language, gender, model_type='model'):
+    """Get the path for a model file, downloading it if necessary."""
+    remote_path = f"{language}/{gender}/model/{model_type}.pth"
+    local_path = os.path.join(LOCAL_MODEL_DIR, remote_path)
+    
+    try:
+        download_if_needed(remote_path, local_path)
+        return local_path
+    except Exception as e:
+        print(f"Error downloading model: {str(e)}")
+        # Fallback to local path in Fastspeech2_HS
+        return os.path.join("Fastspeech2_HS", remote_path)
+
 def load_hifigan_vocoder(language, gender, device):
+    """Load HiFi-GAN vocoder."""
     cache_key = f"{language}_{gender}"
     if cache_key in vocoder_cache:
         return vocoder_cache[cache_key]
 
-    # Load HiFi-GAN vocoder configuration file and generator model for the specified language and gender
-    vocoder_config = f"vocoder/{gender}/aryan/hifigan/config.json"
-    vocoder_generator = f"vocoder/{gender}/aryan/hifigan/generator"
-    # Read the contents of the vocoder configuration file
-    with open(vocoder_config, 'r') as f:
-        data = f.read()
-    json_config = json.loads(data)
-    h = AttrDict(json_config)
-    torch.manual_seed(h.seed)
-    # Move the generator model to the specified device (CPU or GPU)
-    device = torch.device(device)
-    generator = Generator(h).to(device)
-    state_dict_g = torch.load(vocoder_generator, device)
-    generator.load_state_dict(state_dict_g['generator'])
-    generator.eval()
-    generator.remove_weight_norm()
-
-    # Cache the model
-    vocoder_cache[cache_key] = generator
-    return generator
+    try:
+        # Determine if language is Aryan or Dravidian
+        aryan_languages = ['hindi', 'marathi', 'punjabi', 'gujarati', 'bengali', 'odia', 'assamese', 'manipuri', 'bodo', 'rajasthani', 'urdu']
+        language_family = 'aryan' if language.lower() in aryan_languages else 'dravidian'
+        
+        # Use local paths
+        vocoder_config = os.path.join('vocoder', gender, language_family, 'hifigan', 'config.json')
+        vocoder_generator = os.path.join('vocoder', gender, language_family, 'hifigan', 'generator')
+        
+        with open(vocoder_config, 'r') as f:
+            data = f.read()
+        json_config = json.loads(data)
+        h = AttrDict(json_config)
+        
+        device = torch.device(device)
+        generator = Generator(h).to(device)
+        state_dict_g = torch.load(vocoder_generator, device)
+        generator.load_state_dict(state_dict_g['generator'])
+        generator.eval()
+        generator.remove_weight_norm()
+        
+        vocoder_cache[cache_key] = generator
+        return generator
+    except Exception as e:
+        print(f"Error loading vocoder: {str(e)}")
+        raise
 
 def load_fastspeech2_model(language, gender, device):
+    """Load FastSpeech2 model."""
     cache_key = f"{language}_{gender}"
     if cache_key in model_cache:
         return model_cache[cache_key]
     
-    #updating the config.yaml file based on language and gender
-    with open(f"{language}/{gender}/model/config.yaml", "r") as file:      
-        config = yaml.safe_load(file)
-    
-    current_working_directory = os.getcwd()
-    feat="model/feats_stats.npz"
-    pitch="model/pitch_stats.npz"
-    energy="model/energy_stats.npz"
-    
-    feat_path=os.path.join(current_working_directory,language,gender,feat)
-    pitch_path=os.path.join(current_working_directory,language,gender,pitch)
-    energy_path=os.path.join(current_working_directory,language,gender,energy)
-
-    config["normalize_conf"]["stats_file"] = feat_path
-    config["pitch_normalize_conf"]["stats_file"] = pitch_path
-    config["energy_normalize_conf"]["stats_file"] = energy_path
+    try:
+        model_dir = os.path.join(language, gender, 'model')
+        config_path = os.path.join(model_dir, 'config.yaml')
         
-    with open(f"{language}/{gender}/model/config.yaml", "w") as file:
-        yaml.dump(config, file)
-    
-    tts_model = f"{language}/{gender}/model/model.pth"
-    tts_config = f"{language}/{gender}/model/config.yaml"
-    
-    model = Text2Speech(train_config=tts_config, model_file=tts_model, device=device)
-    
-    # Cache the model
-    model_cache[cache_key] = model
-    return model
+        with open(config_path, "r") as file:      
+            config = yaml.safe_load(file)
+        
+        current_working_directory = os.getcwd()
+        feat = os.path.join(model_dir, 'feats_stats.npz')
+        pitch = os.path.join(model_dir, 'pitch_stats.npz')
+        energy = os.path.join(model_dir, 'energy_stats.npz')
+        
+        feat_path = os.path.join(current_working_directory, feat)
+        pitch_path = os.path.join(current_working_directory, pitch)
+        energy_path = os.path.join(current_working_directory, energy)
+
+        config["normalize_conf"]["stats_file"] = feat_path
+        config["pitch_normalize_conf"]["stats_file"] = pitch_path
+        config["energy_normalize_conf"]["stats_file"] = energy_path
+            
+        with open(config_path, "w") as file:
+            yaml.dump(config, file)
+        
+        tts_model = os.path.join(model_dir, 'model.pth')
+        
+        model = Text2Speech(train_config=config_path, model_file=tts_model, device=device)
+        model_cache[cache_key] = model
+        return model
+    except Exception as e:
+        print(f"Error loading FastSpeech2 model: {str(e)}")
+        raise
 
 def text_synthesis(language, gender, sample_text, vocoder, MAX_WAV_VALUE, device, alpha):
     try:
