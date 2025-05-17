@@ -371,7 +371,7 @@
             
             document.getElementById('text').value = sampleTexts[language] || '';
         }
-
+            
         // Add click handler for sample text button
         document.getElementById('sampleTextBtn').addEventListener('click', function() {
             const language = document.getElementById('language').value;
@@ -388,7 +388,7 @@
             const text = e.target.value;
             const charCount = text.length;
             document.getElementById('charCount').textContent = charCount;
-            
+                
             const warning = document.getElementById('textLengthWarning');
             if (charCount > 2000) {
                 warning.style.display = 'block';
@@ -396,7 +396,7 @@
             } else if (charCount > 1600) {
                 warning.style.display = 'block';
                 warning.textContent = `Approaching character limit (${charCount}/2000)`;
-            } else {
+                } else {
                 warning.style.display = 'none';
             }
         });

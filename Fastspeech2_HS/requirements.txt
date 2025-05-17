@@ -3,7 +3,7 @@
 flask
 requests
 torch
-espnet
+espnet==202304
 matplotlib
 pandas
 indic-num2words

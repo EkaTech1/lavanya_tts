@@ -157,14 +157,14 @@ def load_hifigan_vocoder(language, gender, device):
             data = f.read()
         json_config = json.loads(data)
         h = AttrDict(json_config)
-        
+            
         device = torch.device(device)
         generator = Generator(h).to(device)
         state_dict_g = torch.load(vocoder_generator, device)
         generator.load_state_dict(state_dict_g['generator'])
         generator.eval()
         generator.remove_weight_norm()
-        
+
         vocoder_cache[cache_key] = generator
         return generator
     except Exception as e:
@@ -183,23 +183,23 @@ def load_fastspeech2_model(language, gender, device):
         
         with open(config_path, "r") as file:      
             config = yaml.safe_load(file)
-        
+    
         current_working_directory = os.getcwd()
         feat = os.path.join(model_dir, 'feats_stats.npz')
         pitch = os.path.join(model_dir, 'pitch_stats.npz')
         energy = os.path.join(model_dir, 'energy_stats.npz')
-        
+    
         feat_path = os.path.join(current_working_directory, feat)
         pitch_path = os.path.join(current_working_directory, pitch)
         energy_path = os.path.join(current_working_directory, energy)
-
+    
         config["normalize_conf"]["stats_file"] = feat_path
         config["pitch_normalize_conf"]["stats_file"] = pitch_path
         config["energy_normalize_conf"]["stats_file"] = energy_path
-            
+        
         with open(config_path, "w") as file:
             yaml.dump(config, file)
-        
+    
         tts_model = os.path.join(model_dir, 'model.pth')
         
         model = Text2Speech(train_config=config_path, model_file=tts_model, device=device)

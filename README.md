@@ -183,7 +183,7 @@ For issues and questions:
 1. Check the troubleshooting section
 2. Verify your Python and package versions
 3. Ensure all model files are in place
-4. Check system requirements are met
+4. Check system requirements are met 
 
 # Lavanya TTS - Multilingual Text-to-Speech System
 

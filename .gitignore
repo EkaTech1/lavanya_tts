@@ -50,6 +50,6 @@ static/audio/*
 
 # Logs
 *.log
-logs/
+logs/ 
 
 # Note: We are including model files (.pth, .pt, .ckpt, .bin) as they are essential for the TTS system 

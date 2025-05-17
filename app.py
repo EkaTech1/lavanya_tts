@@ -181,7 +181,7 @@ def synthesize():
                     'status': 'error',
                     'message': 'Generated audio file is empty. Please try again.'
                 }), 500
-            
+        
             logger.info(f"Successfully generated audio file: {filename}")
             
             # Return success response
@@ -210,6 +210,10 @@ def synthesize():
             'status': 'error',
             'message': f'An unexpected error occurred: {str(e)}'
         }), 500
+        
+@app.route('/favicon.ico')
+def no_favicon():
+    return '', 204
 
 @app.errorhandler(500)
 def handle_500_error(e):
@@ -229,4 +233,4 @@ def handle_404_error(e):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 4005))
     debug = os.environ.get('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug) 
+    app.run(host='0.0.0.0', port=port, debug=debug)
