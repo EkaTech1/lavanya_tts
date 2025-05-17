@@ -1,6 +1,6 @@
 Flask==2.3.2
 requests==2.31.0
-torch==2.0.1
+torch==2.0.0
 torchaudio==2.0.1
 espnet==202304
 espnet_model_zoo
