@@ -1,0 +1,15 @@
+[Unit]
+Description=Lavanya TTS Application
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/lavanya_tts
+Environment="PATH=/var/www/lavanya_tts/venv/bin"
+Environment="MODELS_BASE_PATH=/mnt/models"
+ExecStart=/var/www/lavanya_tts/venv/bin/python app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target 
