@@ -16,7 +16,6 @@
 # In[3]:
 
 
-import nltk
 import numpy
 import xlrd
 import openpyxl 
@@ -49,8 +48,8 @@ data = data.replace(' – ',' ')
 data = data.replace('-',' ')
 data = data.replace('।','')
 data = data.replace('&','')
-data = data.replace('’','')
-data = data.replace('‘','')
+data = data.replace(''','')
+data = data.replace(''','')
 data = data.replace(':','')
 data = data.replace(',','')
 data = data.replace('/','')
