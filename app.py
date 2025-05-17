@@ -3,10 +3,51 @@ import os
 import subprocess
 import logging
 import sys
+import nltk
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize NLTK data
+def init_nltk_data():
+    """Initialize NLTK data if not already present."""
+    try:
+        logger.info("Checking NLTK data...")
+        required_data = ['averaged_perceptron_tagger', 'cmudict']
+        for item in required_data:
+            if not nltk.data.find(f'taggers/{item}' if 'tagger' in item else f'corpora/{item}'):
+                logger.info(f"Downloading NLTK data: {item}")
+                nltk.download(item, quiet=True)
+            else:
+                logger.info(f"NLTK data already exists: {item}")
+    except Exception as e:
+        logger.warning(f"Error checking/downloading NLTK data: {str(e)}")
+
+# Apply tacotron_cleaner patch
+def apply_tacotron_patch():
+    """Apply patch to fix SyntaxWarning in tacotron_cleaner."""
+    try:
+        import tacotron_cleaner
+        cleaner_init = os.path.join(os.path.dirname(tacotron_cleaner.__file__), '__init__.py')
+        
+        with open(cleaner_init, 'r') as f:
+            content = f.read()
+        
+        if "s is not '_'" in content or "s is not '~'" in content:
+            logger.info("Applying tacotron_cleaner patch...")
+            # Fix the syntax warning by replacing 'is not' with '!='
+            fixed_content = content.replace("s is not '_'", "s != '_'").replace("s is not '~'", "s != '~'")
+            
+            with open(cleaner_init, 'w') as f:
+                f.write(fixed_content)
+            logger.info("Successfully applied tacotron_cleaner patch")
+    except Exception as e:
+        logger.warning(f"Failed to apply tacotron_cleaner patch: {str(e)}")
+
+# Initialize NLTK data and apply patches at startup
+init_nltk_data()
+apply_tacotron_patch()
 
 app = Flask(__name__, static_url_path='/static')
 app.config['UPLOAD_FOLDER'] = 'static/audio'

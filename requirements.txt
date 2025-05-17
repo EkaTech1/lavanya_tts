@@ -19,4 +19,5 @@ flask-cors==4.0.0
 indic-unified-parser==1.0.6
 scikit-learn==1.2.2
 num2words==0.5.12
+nltk==3.8.1
 
